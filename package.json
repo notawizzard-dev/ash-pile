@@ -1,0 +1,18 @@
+{
+	"scripts": {
+		"lint": "npx @biomejs/biome lint",
+		"check": "npx @biomejs/biome check",
+		"check-write": "npx @biomejs/biome check --write",
+		"cli": "npx tsx src/cli.ts",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@biomejs/biome": "^2.6.8",
+		"node": "^27.0.0-alpha.0.1.1",
+		"tsx": "^4.23.15",
+		"typescript": "^7.0.2"
+	},
+	"devDependencies": {
+		"@types/node": "^26.6.6"
+	}
+}

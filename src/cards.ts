@@ -1,0 +1,30 @@
+export type CardType = "land" | "creature" | "instant" | "sorcery";
+
+export interface CardDefinition {
+	name: string;
+	types: readonly CardType[];
+}
+
+export const BASIC_LAND_NAMES = [
+	"Plains",
+	"Island",
+	"Swamp",
+	"Mountain",
+	"Forest",
+] as const;
+
+const DEFINITIONS = new Map<string, CardDefinition>(
+	BASIC_LAND_NAMES.map(
+		(name) => [name, { name, types: ["land"] }] as [string, CardDefinition],
+	),
+);
+
+export function getCardDefinition(name: string): CardDefinition {
+	const definition = DEFINITIONS.get(name);
+	if (!definition) throw new Error(`Unknown card: ${name}`);
+	return definition;
+}
+
+export function isLand(card: { readonly name: string }): boolean {
+	return getCardDefinition(card.name).types.includes("land");
+}
