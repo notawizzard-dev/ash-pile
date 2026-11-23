@@ -1,12 +1,12 @@
 import type { ActionCandidate, ActionDefinition } from "../actions/action";
 import type { ActionPrompt, DeepReadonly, GameState, PlayerId } from "../types";
-import { viewPlayer } from "../util";
+import { decidingPlayerId, viewPlayer } from "../util";
 
 /**
  * Turns the registered action definitions plus the current state into the
- * prompt the player should see next. Read-only: never mutates state.
+ * prompt the deciding player should see next. Read-only: never mutates state.
  *
- * The prompt is derived entirely from `state` (including `state.pending`),
+ * The prompt is derived entirely from `state` (including `state.pendingCtx`),
  * so there is no hidden conversation state in the engine.
  */
 export class ActionService {
@@ -51,8 +51,8 @@ export class ActionService {
 			return { kind: "gameOver", result: { ...state.result } };
 		}
 
-		const playerId = state.priorityPlayerId;
-		const pending = state.pending;
+		const playerId = decidingPlayerId(state);
+		const pending = state.pendingCtx;
 
 		if (!pending) {
 			const player = viewPlayer(state, playerId);

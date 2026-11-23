@@ -4,13 +4,13 @@ import type { ActionCandidate, ActionDefinition } from "../src/actions/action";
 import { GameEngine } from "../src/engine";
 import { opponentOf } from "../src/players";
 import type {
-	ActionPrompt,
 	DeepReadonly,
 	GameState,
 	InputResult,
 	PlayerId,
 } from "../src/types";
-import { thaw } from "../src/util";
+import { decidingPlayerId } from "../src/util";
+import type { ViewPrompt } from "../src/view";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -24,8 +24,10 @@ function must<T>(value: T | undefined | null): T {
 const P1 = "p1";
 const P2 = "p2";
 
-function prompt(engine: GameEngine): DeepReadonly<ActionPrompt> {
-	return engine.getLegalActions();
+/** The prompt as seen by `viewer`, defaulting to whoever the game is waiting on. */
+function prompt(engine: GameEngine, viewer?: PlayerId): ViewPrompt {
+	return engine.getView(viewer ?? decidingPlayerId(engine.exportState()))
+		.prompt;
 }
 
 function optionIds(engine: GameEngine): string[] {
@@ -41,10 +43,11 @@ function ok(result: InputResult): void {
 	assert.equal(result.ok, true, result.ok ? "" : result.error);
 }
 
+/** Whoever the game is currently waiting on. */
 function holder(engine: GameEngine): PlayerId {
-	const p = prompt(engine);
-	assert.ok(p.kind !== "gameOver", "the game is over");
-	return p.playerId;
+	const state = engine.exportState();
+	assert.equal(state.status, "active", "the game is over");
+	return decidingPlayerId(state);
 }
 
 function select(engine: GameEngine, optionId: string): InputResult {
@@ -75,9 +78,9 @@ function passPhase(engine: GameEngine): void {
 }
 
 function advanceTo(engine: GameEngine, phase: string): void {
-	for (let i = 0; i < 40 && engine.getState().phase !== phase; i++)
+	for (let i = 0; i < 40 && engine.exportState().phase !== phase; i++)
 		passPhase(engine);
-	assert.equal(engine.getState().phase, phase);
+	assert.equal(engine.exportState().phase, phase);
 }
 
 function count(
@@ -97,11 +100,12 @@ function landOptionId(engine: GameEngine): string {
 
 describe("setup", () => {
 	it("deals seven cards each from a shared 50-card deck of basic lands", () => {
-		const state = new GameEngine({ seed: 1 }).getState();
+		const state = new GameEngine({ seed: 1 }).exportState();
 		const { p1, p2 } = state.players;
 		assert.equal(p1.hand.length, 7);
 		assert.equal(p2.hand.length, 7);
 		assert.equal(state.library.length, 50 - 14);
+		assert.deepEqual(state.graveyard, []);
 
 		const all = [...p1.hand, ...p2.hand, ...state.library];
 		for (const land of ["Plains", "Island", "Swamp", "Mountain", "Forest"]) {
@@ -112,65 +116,20 @@ describe("setup", () => {
 
 	it("is reproducible from a seed, and differs between seeds", () => {
 		const order = (seed: number) =>
-			new GameEngine({ seed }).getState().library.map((c) => c.id);
+			new GameEngine({ seed }).exportState().library.map((c) => c.id);
 		assert.deepEqual(order(7), order(7));
 		assert.notDeepEqual(order(7), order(8));
 	});
 
 	it("starts on the first player, in upkeep, having skipped untap automatically", () => {
-		const state = new GameEngine({ seed: 1 }).getState();
+		const state = new GameEngine({ seed: 1 }).exportState();
 		assert.equal(state.status, "active");
 		assert.equal(state.turnNumber, 1);
 		assert.equal(state.activePlayerId, P1);
 		assert.equal(state.priorityPlayerId, P1);
 		assert.equal(state.phase, "upkeep");
-	});
-});
-
-// ---------------------------------------------------------------------------
-// Immutability
-// ---------------------------------------------------------------------------
-
-describe("immutability", () => {
-	it("hands out frozen deep copies of state and legal actions", () => {
-		const engine = new GameEngine({ seed: 1 });
-		const state = engine.getState();
-		assert.notEqual(engine.getState(), state, "each call returns a fresh copy");
-
-		assert.throws(() => {
-			(state as GameState).turnNumber = 99;
-		}, TypeError);
-		assert.throws(() => {
-			(state.players.p1 as GameState["players"]["p1"]).hand.pop();
-		}, TypeError);
-		assert.throws(() => {
-			(state.library as GameState["library"]).length = 0;
-		}, TypeError);
-
-		const actions = engine.getLegalActions();
-		assert.ok(actions.kind === "chooseAction");
-		assert.throws(() => {
-			(actions.options as { id: string; label: string }[]).push({
-				id: "cheat",
-				label: "cheat",
-			});
-		}, TypeError);
-
-		assert.equal(engine.getState().turnNumber, 1, "engine state is unaffected");
-	});
-
-	it("does not alias the pending action into what it returns", () => {
-		const engine = new GameEngine({ seed: 1 });
-		select(engine, "pass-priority");
-		const before = engine.getState();
-		assert.equal(before.pending?.candidateId, "pass-priority");
-		confirm(engine);
-		assert.equal(
-			before.pending?.candidateId,
-			"pass-priority",
-			"old snapshot is a stable copy",
-		);
-		assert.equal(engine.getState().pending, null);
+		assert.equal(state.pendingCtx, null);
+		assert.equal(state.resolutionCtx, null);
 	});
 });
 
@@ -187,12 +146,12 @@ describe("priority and phases", () => {
 	it("needs both players to pass before the phase advances", () => {
 		const engine = new GameEngine({ seed: 1 });
 		pass(engine);
-		assert.equal(engine.getState().phase, "upkeep");
-		assert.equal(engine.getState().priorityPlayerId, P2);
+		assert.equal(engine.exportState().phase, "upkeep");
+		assert.equal(engine.exportState().priorityPlayerId, P2);
 		pass(engine);
-		assert.equal(engine.getState().phase, "draw");
+		assert.equal(engine.exportState().phase, "draw");
 		assert.equal(
-			engine.getState().priorityPlayerId,
+			engine.exportState().priorityPlayerId,
 			P1,
 			"active player gets priority first",
 		);
@@ -201,7 +160,7 @@ describe("priority and phases", () => {
 	it("skips the first player's draw on turn 1, then reaches main 1", () => {
 		const engine = new GameEngine({ seed: 1 });
 		advanceTo(engine, "main1");
-		const state = engine.getState();
+		const state = engine.exportState();
 		assert.equal(state.players.p1.hand.length, 7);
 		assert.equal(state.library.length, 36);
 	});
@@ -211,19 +170,19 @@ describe("priority and phases", () => {
 		advanceTo(engine, "main1");
 		ok(select(engine, landOptionId(engine)));
 		ok(confirm(engine));
-		assert.equal(engine.getState().landsPlayedThisTurn, 1);
+		assert.equal(engine.exportState().landsPlayedThisTurn, 1);
 
 		advanceTo(engine, "end");
 		passPhase(engine);
 
-		let state = engine.getState();
+		let state = engine.exportState();
 		assert.equal(state.turnNumber, 2);
 		assert.equal(state.activePlayerId, P2);
 		assert.equal(state.phase, "upkeep");
 		assert.equal(state.landsPlayedThisTurn, 0);
 
 		advanceTo(engine, "main1");
-		state = engine.getState();
+		state = engine.exportState();
 		assert.equal(state.players.p2.hand.length, 8, "drew for the turn");
 		assert.equal(state.library.length, 35);
 		assert.ok(optionIds(engine).some((id) => id.startsWith("play-land:")));
@@ -243,15 +202,15 @@ describe("playing a land", () => {
 		ok(select(engine, id));
 
 		// The option being considered is part of the state; nothing has changed yet.
-		const considering = engine.getState();
-		assert.equal(considering.pending?.candidateId, id);
+		const considering = engine.exportState();
+		assert.equal(considering.pendingCtx?.candidateId, id);
 		assert.equal(considering.players.p1.hand.length, 7);
 		assert.equal(considering.players.p1.battlefield.length, 0);
 		assert.equal(prompt(engine).kind, "confirm");
 
 		ok(confirm(engine));
-		const after = engine.getState();
-		assert.equal(after.pending, null);
+		const after = engine.exportState();
+		assert.equal(after.pendingCtx, null);
 		assert.equal(after.players.p1.hand.length, 6);
 		assert.equal(after.players.p1.battlefield.length, 1);
 		assert.equal(after.landsPlayedThisTurn, 1);
@@ -273,7 +232,7 @@ describe("playing a land", () => {
 	it("collapses identical lands in hand into one option", () => {
 		const engine = new GameEngine({ seed: 1 });
 		advanceTo(engine, "main1");
-		const hand = engine.getState().players.p1.hand;
+		const hand = engine.exportState().players.p1.hand;
 		const distinctNames = new Set(hand.map((c) => c.name)).size;
 		const landOptions = optionIds(engine).filter((id) =>
 			id.startsWith("play-land:"),
@@ -302,13 +261,13 @@ describe("back and invalid input", () => {
 		assert.equal(prompt(engine).kind, "confirm");
 		ok(back(engine));
 		assert.equal(prompt(engine).kind, "chooseAction");
-		assert.equal(engine.getState().pending, null);
+		assert.equal(engine.exportState().pendingCtx, null);
 	});
 
 	it("rejects bad input and leaves the state exactly as it was", () => {
 		const engine = new GameEngine({ seed: 1 });
 		advanceTo(engine, "main1");
-		const snapshot = JSON.stringify(engine.getState());
+		const snapshot = JSON.stringify(engine.exportState());
 
 		const attempts: InputResult[] = [
 			engine.submitInput({
@@ -325,7 +284,7 @@ describe("back and invalid input", () => {
 			engine.submitInput({ type: "back", playerId: P1 }), // nothing to back out of
 		];
 		for (const result of attempts) assert.equal(result.ok, false);
-		assert.equal(JSON.stringify(engine.getState()), snapshot);
+		assert.equal(JSON.stringify(engine.exportState()), snapshot);
 	});
 
 	it("refuses a second select while waiting for confirmation", () => {
@@ -398,8 +357,16 @@ class FakeExplode implements ActionDefinition {
 	}
 }
 
-function scenario(extra: ActionDefinition[]): GameEngine {
-	const base = thaw<GameState>(new GameEngine({ seed: 1 }).getState());
+/**
+ * A game in the first main phase with a Mountain (p1) and an Island (p2) on
+ * the battlefield. `tweak` can adjust the state further before the engine is
+ * built from it.
+ */
+function scenario(
+	extra: ActionDefinition[],
+	tweak?: (state: GameState) => void,
+): GameEngine {
+	const base = new GameEngine({ seed: 1 }).exportState();
 	base.phase = "main1";
 	base.players.p1.battlefield.push({
 		card: { id: "mountain-a", name: "Mountain" },
@@ -411,6 +378,7 @@ function scenario(extra: ActionDefinition[]): GameEngine {
 		controllerId: P2,
 		tapped: false,
 	});
+	tweak?.(base);
 	return GameEngine.fromState(base, { extraActions: extra });
 }
 
@@ -435,7 +403,7 @@ describe("nested parameter selection", () => {
 			p.options.map((o) => o.id),
 			["mountain-a"],
 		);
-		assert.equal(engine.getState().pending?.label, "Cast Bite Down");
+		assert.equal(engine.exportState().pendingCtx?.label, "Cast Bite Down");
 
 		ok(select(engine, "mountain-a"));
 		p = prompt(engine);
@@ -455,7 +423,7 @@ describe("nested parameter selection", () => {
 		assert.ok(p.kind === "confirm");
 		assert.equal(p.summary, "Bite Down: Mountain -> Island");
 		assert.equal(
-			engine.getState().log.some((l) => l.startsWith("Bite Down resolves")),
+			engine.exportState().log.some((l) => l.startsWith("Bite Down resolves")),
 			false,
 			"nothing applied before confirm",
 		);
@@ -463,10 +431,10 @@ describe("nested parameter selection", () => {
 		ok(confirm(engine));
 		assert.ok(
 			engine
-				.getState()
+				.exportState()
 				.log.includes("Bite Down resolves: mountain-a -> island-b"),
 		);
-		assert.equal(engine.getState().pending, null);
+		assert.equal(engine.exportState().pendingCtx, null);
 		assert.equal(prompt(engine).kind, "chooseAction");
 	});
 
@@ -486,7 +454,7 @@ describe("nested parameter selection", () => {
 		);
 		ok(back(engine));
 		assert.equal(prompt(engine).kind, "chooseAction");
-		assert.equal(engine.getState().pending, null);
+		assert.equal(engine.exportState().pendingCtx, null);
 	});
 
 	it("rejects an option that belongs to a different step", () => {
@@ -521,15 +489,240 @@ describe("atomic updates", () => {
 	it("discards every change if an action throws partway through", () => {
 		const engine = scenario([new FakeExplode()]);
 		ok(select(engine, "explode"));
-		const snapshot = JSON.stringify(engine.getState());
+		const snapshot = JSON.stringify(engine.exportState());
 
 		assert.throws(() => confirm(engine), /boom/);
-		assert.equal(JSON.stringify(engine.getState()), snapshot);
+		assert.equal(JSON.stringify(engine.exportState()), snapshot);
 		assert.equal(
-			engine.getState().pending?.candidateId,
+			engine.exportState().pendingCtx?.candidateId,
 			"explode",
 			"still awaiting confirm",
 		);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Player views (what each seat is allowed to see)
+// ---------------------------------------------------------------------------
+
+describe("player views", () => {
+	it("shows the viewer their own hand and the opponent's hand only as a size", () => {
+		const engine = new GameEngine({ seed: 1 });
+		const state = engine.exportState();
+		const v1 = engine.getView(P1);
+		const v2 = engine.getView(P2);
+
+		assert.equal(v1.viewerId, P1);
+		assert.equal(v2.viewerId, P2);
+		assert.deepEqual(v1.hand, state.players.p1.hand);
+		assert.deepEqual(v2.hand, state.players.p2.hand);
+		assert.equal(v1.players.p2.handSize, 7);
+		assert.equal(v2.players.p1.handSize, 7);
+		assert.equal("hand" in v1.players.p2, false);
+		assert.equal("hand" in v2.players.p1, false);
+	});
+
+	it("shows only the size of the library, and leaves out the seed and RNG state", () => {
+		const view = new GameEngine({ seed: 1 }).getView(P1);
+		assert.equal(view.librarySize, 36);
+		for (const key of ["library", "seed", "rngState"]) {
+			assert.equal(key in view, false, `"${key}" must not be in a view`);
+		}
+	});
+
+	it("leaks no hidden card identity or seed anywhere in the serialized view", () => {
+		const seed = 123456789;
+		const engine = new GameEngine({ seed });
+		const state = engine.exportState();
+		const json = JSON.stringify(engine.getView(P2));
+
+		// Sanity: the check can fail. P2's own hand is visible to P2.
+		for (const card of state.players.p2.hand) {
+			assert.ok(json.includes(JSON.stringify(card.id)), `own card ${card.id}`);
+		}
+		// P1's hand and the whole library are hidden from P2, by id.
+		for (const card of [...state.players.p1.hand, ...state.library]) {
+			assert.equal(
+				json.includes(JSON.stringify(card.id)),
+				false,
+				`${card.id} leaked`,
+			);
+		}
+		// The seed (and RNG state) would reveal the library order, log included.
+		assert.equal(json.includes(String(seed)), false, "seed leaked");
+		assert.equal(json.includes(String(state.rngState)), false, "rng leaked");
+	});
+
+	it("keeps public information identical between the two seats", () => {
+		const engine = scenario([], (s) => {
+			s.graveyard = [
+				{ id: "swamp-1", name: "Swamp" },
+				{ id: "island-1", name: "Island" },
+				{ id: "plains-1", name: "Plains" },
+			];
+			s.stack = [{ id: "stack-1", description: "A spell" }];
+		});
+		const v1 = engine.getView(P1);
+		const v2 = engine.getView(P2);
+
+		assert.deepEqual(
+			v1.graveyard.map((c) => c.id),
+			["swamp-1", "island-1", "plains-1"],
+			"the shared graveyard keeps its order",
+		);
+		assert.deepEqual(v1.graveyard, v2.graveyard);
+		assert.deepEqual(v1.stack, v2.stack);
+		assert.deepEqual(v1.players.p1.battlefield, v2.players.p1.battlefield);
+		assert.deepEqual(v1.players.p2.battlefield, v2.players.p2.battlefield);
+		assert.equal(v1.librarySize, v2.librarySize);
+		assert.deepEqual(v1.log, v2.log);
+		assert.equal(v1.phase, v2.phase);
+		assert.equal(v1.turnNumber, v2.turnNumber);
+		assert.equal(v1.hand.length, v2.players.p1.handSize);
+		assert.equal(v2.hand.length, v1.players.p2.handSize);
+	});
+
+	it("gives the options to the deciding player and a waiting prompt to the other", () => {
+		const engine = new GameEngine({ seed: 1 });
+		assert.equal(engine.getView(P1).prompt.kind, "chooseAction");
+		assert.deepEqual(engine.getView(P2).prompt, {
+			kind: "waiting",
+			onPlayerId: P1,
+		});
+
+		// P1 picks an option: P2 still learns nothing about it.
+		select(engine, "pass-priority");
+		assert.equal(engine.getView(P1).prompt.kind, "confirm");
+		assert.deepEqual(engine.getView(P2).prompt, {
+			kind: "waiting",
+			onPlayerId: P1,
+		});
+
+		// After P1 passes, the roles swap.
+		confirm(engine);
+		assert.deepEqual(engine.getView(P1).prompt, {
+			kind: "waiting",
+			onPlayerId: P2,
+		});
+		assert.equal(engine.getView(P2).prompt.kind, "chooseAction");
+	});
+
+	it("shows the pending decision only to its owner", () => {
+		const engine = new GameEngine({ seed: 1 });
+		select(engine, "pass-priority");
+		assert.equal(engine.getView(P1).pendingCtx?.candidateId, "pass-priority");
+		assert.equal(engine.getView(P2).pendingCtx, null);
+	});
+
+	it("gives a stable snapshot of the pending decision", () => {
+		const engine = new GameEngine({ seed: 1 });
+		select(engine, "pass-priority");
+		const before = engine.getView(P1);
+		assert.equal(before.pendingCtx?.candidateId, "pass-priority");
+		confirm(engine);
+		assert.equal(
+			before.pendingCtx?.candidateId,
+			"pass-priority",
+			"old view is unaffected",
+		);
+		assert.equal(engine.getView(P1).pendingCtx, null);
+	});
+
+	it("hands out copies: mutating a view or an export never touches the engine", () => {
+		const engine = scenario([]);
+		const viewBefore = JSON.stringify(engine.getView(P1));
+		const stateBefore = JSON.stringify(engine.exportState());
+
+		const view = engine.getView(P1);
+		view.hand.pop();
+		view.graveyard.push({ id: "x", name: "Swamp" });
+		view.stack.push({ id: "s", description: "fake" });
+		view.log.push("fake");
+		view.players.p2.handSize = 0;
+		must(view.players.p1.battlefield[0]).tapped = true;
+
+		const exported = engine.exportState();
+		exported.turnNumber = 99;
+		exported.library.length = 0;
+		must(exported.players.p1.battlefield[0]).tapped = true;
+
+		assert.equal(JSON.stringify(engine.getView(P1)), viewBefore);
+		assert.equal(JSON.stringify(engine.exportState()), stateBefore);
+	});
+
+	it("copies the state it is resumed from", () => {
+		const base = new GameEngine({ seed: 1 }).exportState();
+		const engine = GameEngine.fromState(base);
+		base.turnNumber = 99;
+		base.library.length = 0;
+		assert.equal(engine.exportState().turnNumber, 1);
+		assert.equal(engine.exportState().library.length, 36);
+	});
+
+	it("keeps state and views plain data that survives a JSON round trip", () => {
+		const engine = new GameEngine({ seed: 1 });
+		advanceTo(engine, "main1");
+		ok(select(engine, landOptionId(engine)));
+		ok(confirm(engine));
+		select(engine, "pass-priority"); // leave a pending decision in the state
+
+		const state = engine.exportState();
+		assert.deepEqual(JSON.parse(JSON.stringify(state)), state);
+		for (const id of [P1, P2] as const) {
+			const view = engine.getView(id);
+			assert.deepEqual(JSON.parse(JSON.stringify(view)), view);
+		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Resolution context (groundwork: nothing sets it yet, but the shape is in place)
+// ---------------------------------------------------------------------------
+
+describe("resolution context", () => {
+	function resolvingScenario(controllerId: PlayerId = P2): GameEngine {
+		return scenario([], (s) => {
+			s.stack = [{ id: "s1", description: "A spell" }];
+			s.priorityPlayerId = null;
+			s.resolutionCtx = {
+				kind: "spell",
+				stackItemId: "s1",
+				controllerId,
+				step: 3,
+			};
+		});
+	}
+
+	it("asks the resolving player to decide, rather than the priority holder", () => {
+		const engine = resolvingScenario();
+		assert.equal(holder(engine), P2);
+		assert.deepEqual(engine.getView(P1).prompt, {
+			kind: "waiting",
+			onPlayerId: P2,
+		});
+		assert.equal(engine.getView(P2).prompt.kind, "chooseAction");
+	});
+
+	it("offers no priority or land actions while an event is resolving", () => {
+		// P1 is the active player in main 1 with lands in hand, so would normally
+		// be offered a land drop and a pass.
+		const engine = resolvingScenario(P1);
+		const p = engine.getView(P1).prompt;
+		assert.ok(p.kind === "chooseAction");
+		assert.deepEqual(p.options, []);
+	});
+
+	it("shows both players a public projection of it, without the engine's cursor", () => {
+		const engine = resolvingScenario();
+		for (const id of [P1, P2] as const) {
+			const view = engine.getView(id);
+			assert.equal(view.priorityPlayerId, null);
+			assert.deepEqual(view.resolutionCtx, {
+				kind: "spell",
+				stackItemId: "s1",
+				controllerId: P2,
+			});
+		}
 	});
 });
 
@@ -539,17 +732,19 @@ describe("atomic updates", () => {
 
 describe("game end", () => {
 	it("ends the game when a player must draw from the empty shared library", () => {
-		const base = thaw<GameState>(new GameEngine({ seed: 1 }).getState());
+		const base = new GameEngine({ seed: 1 }).exportState();
 		base.turnNumber = 2; // so the active player draws this turn
 		base.library = [];
 		const engine = GameEngine.fromState(base);
 
 		passPhase(engine); // upkeep -> draw: attempts to draw, loses
 
-		const state = engine.getState();
+		const state = engine.exportState();
 		assert.equal(state.status, "finished");
 		assert.equal(state.result?.loserId, P1);
 		assert.equal(prompt(engine).kind, "gameOver");
+		assert.equal(engine.getView(P1).prompt.kind, "gameOver");
+		assert.equal(engine.getView(P2).prompt.kind, "gameOver");
 		assert.equal(
 			engine.submitInput({
 				type: "select",

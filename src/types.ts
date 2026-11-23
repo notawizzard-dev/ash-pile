@@ -25,7 +25,6 @@ export interface PlayerState {
 	name: string;
 	hand: CardInstance[];
 	battlefield: Permanent[];
-	graveyard: CardInstance[];
 }
 
 /** Placeholder: the stack exists so priority rules are right, but nothing uses it yet. */
@@ -46,13 +45,34 @@ export interface Selection {
 /**
  * The action a player is currently "considering": picked from the top-level
  * list, possibly with some parameters filled in, but not yet confirmed.
+ * Cancelable (`back`), and visible only to its owner.
  */
-export interface PendingAction {
+export interface PendingContext {
 	playerId: PlayerId;
 	candidateId: string;
 	label: string;
 	selections: Selection[];
 }
+
+/**
+ * A committed event that is part-way through resolving, e.g. a spell whose
+ * effect needs a decision from its controller. Unlike `PendingContext` it
+ * cannot be cancelled. Plain data only (no closures or generators) so the
+ * state stays clonable and serializable; the card registry holds the logic and
+ * this holds only the cursor. Prefer deriving facts from the rest of the state
+ * over storing them here.
+ *
+ * Discriminated by `kind` so other event types can be added later.
+ */
+export type ResolutionContext = {
+	kind: "spell";
+	/** The stack item being resolved. */
+	stackItemId: string;
+	/** The player who makes this event's decisions. */
+	controllerId: PlayerId;
+	/** Index of the next resolution step to run. */
+	step: number;
+};
 
 export interface GameResult {
 	loserId: PlayerId;
@@ -73,7 +93,8 @@ export interface GameState {
 	phase: Phase;
 	landsPlayedThisTurn: number;
 
-	priorityPlayerId: PlayerId;
+	/** Null while an event is resolving: nobody holds priority then. */
+	priorityPlayerId: PlayerId | null;
 	/** Players who have passed in a row. Phase ends when everyone has. */
 	consecutivePasses: number;
 	stack: StackItem[];
@@ -82,8 +103,13 @@ export interface GameState {
 	players: Record<PlayerId, PlayerState>;
 	/** The shared deck. Index 0 is the top card. */
 	library: CardInstance[];
+	/** The shared graveyard. Order matters. Index 0 is the top card, as in the library. */
+	graveyard: CardInstance[];
 
-	pending: PendingAction | null;
+	/** The decision being built up by the player who is deciding. */
+	pendingCtx: PendingContext | null;
+	/** The event currently resolving, if any. */
+	resolutionCtx: ResolutionContext | null;
 	log: string[];
 }
 

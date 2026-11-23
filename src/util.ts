@@ -8,19 +8,22 @@ export class InvalidInputError extends Error {
 	}
 }
 
-export function deepFreeze<T>(value: T): DeepReadonly<T> {
-	if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
-		Object.freeze(value);
-		for (const key of Reflect.ownKeys(value)) {
-			deepFreeze((value as Record<PropertyKey, unknown>)[key]);
-		}
+/** The player holding priority. Throws while an event is resolving (nobody holds it then). */
+export function priorityHolderOf(state: DeepReadonly<GameState>): PlayerId {
+	if (state.priorityPlayerId === null) {
+		throw new Error("Nobody holds priority right now");
 	}
-	return value as DeepReadonly<T>;
+	return state.priorityPlayerId;
 }
 
-/** Deep-copy a readonly value into a mutable one. */
-export function thaw<T>(value: DeepReadonly<T>): T {
-	return structuredClone(value) as unknown as T;
+/**
+ * Whose decision the game is waiting on: the resolving event's controller if
+ * something is resolving, otherwise the priority holder.
+ */
+export function decidingPlayerId(state: DeepReadonly<GameState>): PlayerId {
+	return state.resolutionCtx
+		? state.resolutionCtx.controllerId
+		: priorityHolderOf(state);
 }
 
 export function appendLog(draft: GameState, message: string): void {

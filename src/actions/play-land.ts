@@ -11,6 +11,7 @@ export class PlayLandAction implements ActionDefinition {
 		state: DeepReadonly<GameState>,
 		playerId: PlayerId,
 	): ActionCandidate[] {
+		if (state.resolutionCtx) return [];
 		if (state.activePlayerId !== playerId) return [];
 		if (state.phase !== "main1" && state.phase !== "main2") return [];
 		if (state.stack.length > 0) return [];

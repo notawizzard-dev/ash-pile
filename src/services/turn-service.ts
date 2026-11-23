@@ -1,7 +1,7 @@
 import { PHASE_LABELS, PHASES, type Phase } from "../phases";
 import { opponentOf, PLAYER_COUNT } from "../players";
 import type { GameState, PlayerId } from "../types";
-import { appendLog, getPlayer } from "../util";
+import { appendLog, getPlayer, priorityHolderOf } from "../util";
 import type { DeckService } from "./deck-service";
 
 /**
@@ -23,7 +23,7 @@ export class TurnService {
 	passPriority(draft: GameState): void {
 		draft.consecutivePasses += 1;
 		if (draft.consecutivePasses < PLAYER_COUNT) {
-			draft.priorityPlayerId = opponentOf(draft.priorityPlayerId);
+			draft.priorityPlayerId = opponentOf(priorityHolderOf(draft));
 			return;
 		}
 		if (draft.stack.length > 0) {
@@ -95,7 +95,8 @@ export class TurnService {
 	): void {
 		draft.status = "finished";
 		draft.result = { loserId, reason };
-		draft.pending = null;
+		draft.pendingCtx = null;
+		draft.resolutionCtx = null;
 		appendLog(draft, `Game over: ${reason}.`);
 	}
 }

@@ -1,17 +1,27 @@
 import readline from "node:readline";
 import { GameEngine } from "./engine";
-import { renderBoard, renderPrompt, renderStatus } from "./render";
+import { PLAYER_IDS } from "./players";
+import {
+	renderBoard,
+	renderConsidering,
+	renderPrompt,
+	renderStatus,
+	renderView,
+} from "./render";
 import type { InputResult, PlayerId, PlayerInput } from "./types";
+import { decidingPlayerId } from "./util";
+import type { GameView } from "./view";
 
 const HELP = `Commands:
   <number>     pick that option from the list
   y            confirm the action shown
   b            go back one step (cancels the action if nothing is chosen yet)
   p            shortcut: pass priority (selects it and confirms)
-  board        show the full board (all hands are visible: hot-seat debug view)
-  library      show the shared library in order (top first)
-  log          show the full game log
-  state        dump the raw game state as JSON
+  view [p1|p2] show the game as that player sees it (default: whoever is deciding)
+  log          show the game log (as the deciding player sees it)
+  board        DEBUG: full board, all hands visible
+  library      DEBUG: show the shared library in order (top first)
+  state        DEBUG: dump the raw game state as JSON
   help         show this message
   q            quit`;
 
@@ -28,31 +38,34 @@ function parseSeed(argv: string[]): number | undefined {
 
 const engine = new GameEngine({ seed: parseSeed(process.argv.slice(2)) });
 
+/** The view of whoever the game is waiting on (hot-seat: this CLI plays every seat). */
+function currentView(): GameView {
+	return engine.getView(decidingPlayerId(engine.exportState()));
+}
+
 function show(opts: { board: boolean }): void {
-	const state = engine.getState();
+	const view = currentView();
 	console.log("");
-	console.log(opts.board ? renderBoard(state) : renderStatus(state));
-	if (state.pending && !opts.board) {
-		const chosen = state.pending.selections
-			.map((s) => `${s.step}=${s.label}`)
-			.join(", ");
-		console.log(
-			`Considering: ${state.pending.label}${chosen ? ` [${chosen}]` : ""}`,
-		);
+	if (opts.board) {
+		// Omniscient debug board, so it is fed by the full state rather than a view.
+		console.log(renderBoard(engine.exportState()));
+	} else {
+		console.log(renderStatus(view));
+		if (view.pendingCtx) console.log(renderConsidering(view.pendingCtx));
 	}
-	console.log(renderPrompt(engine.getLegalActions(), state));
+	console.log(renderPrompt(view.prompt, view.players));
 }
 
 /** Submit as whoever currently holds the decision (hot-seat). */
 function submit(
 	build: (playerId: PlayerId) => PlayerInput,
 ): InputResult | undefined {
-	const prompt = engine.getLegalActions();
-	if (prompt.kind === "gameOver") {
+	const view = currentView();
+	if (view.prompt.kind === "gameOver") {
 		console.log("The game is over.");
 		return undefined;
 	}
-	const result = engine.submitInput(build(prompt.playerId));
+	const result = engine.submitInput(build(view.viewerId));
 	if (!result.ok) console.log(`! ${result.error}`);
 	else for (const line of result.log) console.log(`  . ${line}`);
 	return result;
@@ -69,7 +82,21 @@ function changedBoard(result: InputResult | undefined): boolean {
 /** Runs one command. `board` asks the caller to reprint the full board rather than just the status line. */
 function handle(line: string): { quit?: boolean; board?: boolean } {
 	const cmd = line.toLowerCase();
-	const prompt = engine.getLegalActions();
+	const prompt = currentView().prompt;
+
+	const [word, arg] = cmd.split(/\s+/);
+	if (word === "view") {
+		const target =
+			arg === undefined
+				? currentView().viewerId
+				: PLAYER_IDS.find((id) => id === arg);
+		if (target === undefined) {
+			console.log(`! Usage: view [${PLAYER_IDS.join("|")}]`);
+			return {};
+		}
+		console.log(renderView(engine.getView(target)));
+		return {};
+	}
 
 	switch (cmd) {
 		case "":
@@ -85,15 +112,15 @@ function handle(line: string): { quit?: boolean; board?: boolean } {
 		case "board":
 			return { board: true };
 		case "state":
-			console.log(JSON.stringify(engine.getState(), null, 2));
+			console.log(JSON.stringify(engine.exportState(), null, 2));
 			return {};
 		case "log":
-			engine.getState().log.forEach((l) => {
+			currentView().log.forEach((l) => {
 				console.log(`  . ${l}`);
 			});
 			return {};
 		case "library": {
-			const names = engine.getState().library.map((c) => c.name);
+			const names = engine.exportState().library.map((c) => c.name);
 			console.log(
 				`Library (${names.length}, top first):\n  ${names.join(", ")}`,
 			);
@@ -146,7 +173,7 @@ function handle(line: string): { quit?: boolean; board?: boolean } {
 
 const run = async () => {
 	console.log(
-		`Game engine CLI (seed ${engine.getState().seed}). Type "help" for commands.`,
+		`Game engine CLI (seed ${engine.exportState().seed}). Type "help" for commands.`,
 	);
 	show({ board: true });
 

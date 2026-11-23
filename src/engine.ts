@@ -5,15 +5,16 @@ import { ActionService } from "./services/action-service";
 import { DeckService } from "./services/deck-service";
 import { GameSetupService, type SetupOptions } from "./services/setup-service";
 import { TurnService } from "./services/turn-service";
+import { ViewService } from "./services/view-service";
 import type {
-	ActionPrompt,
-	DeepReadonly,
 	GameState,
 	InputResult,
-	PendingAction,
+	PendingContext,
+	PlayerId,
 	PlayerInput,
 } from "./types";
-import { deepFreeze, getPlayer, InvalidInputError, thaw } from "./util";
+import { getPlayer, InvalidInputError } from "./util";
+import type { GameView } from "./view";
 
 export interface GameOptions extends SetupOptions {
 	/** Extra action families, added after the built-in ones. Mainly for tests and experiments. */
@@ -23,11 +24,13 @@ export interface GameOptions extends SetupOptions {
 /**
  * The public face of the rules engine. Three things you can do:
  *
- *   getState()        observe the game
- *   getLegalActions() ask what the player can do next (one nested step at a time)
+ *   getView(playerId) observe the game as that player sees it, including what
+ *                     they are being asked to decide next
  *   submitInput()     answer; the only way the game state ever changes
+ *   exportState()     the full, omniscient state, for saving, tests and
+ *                     debugging only. Never hand this to a player's client.
  *
- * Everything handed out is a frozen deep copy, so callers cannot reach the
+ * Everything handed out is a fresh deep copy, so callers cannot reach the
  * engine's own state. Inside submitInput the engine works on a private draft
  * and swaps it in only if the whole input succeeded, so a failure can never
  * leave the game half-updated.
@@ -35,6 +38,7 @@ export interface GameOptions extends SetupOptions {
 export class GameEngine {
 	private state: GameState;
 	private readonly actions: ActionService;
+	private readonly views: ViewService;
 
 	constructor(options: GameOptions = {}) {
 		const deck = new DeckService();
@@ -44,27 +48,28 @@ export class GameEngine {
 			new PassPriorityAction(turns),
 			...(options.extraActions ?? []),
 		]);
+		this.views = new ViewService(this.actions);
 		this.state = new GameSetupService(deck, turns).createInitialState(options);
 	}
 
-	/** Resume from a saved (or hand-built) state. Handy for tests and save/load. */
+	/** Resume from a saved (or hand-built) state. The state is copied, not adopted. */
 	static fromState(
-		state: DeepReadonly<GameState>,
+		state: GameState,
 		options: Pick<GameOptions, "extraActions"> = {},
 	): GameEngine {
 		const engine = new GameEngine(options);
-		engine.state = thaw<GameState>(state);
+		engine.state = structuredClone(state);
 		return engine;
 	}
 
-	/** Full, omniscient snapshot (hands and library order included). Frozen deep copy. */
-	getState(): DeepReadonly<GameState> {
-		return deepFreeze(structuredClone(this.state));
+	/** The game as `viewerId` is allowed to see it. Contains no hidden information. */
+	getView(viewerId: PlayerId): GameView {
+		return this.views.buildView(this.state, viewerId);
 	}
 
-	/** What the player holding priority can do next. Frozen deep copy. */
-	getLegalActions(): DeepReadonly<ActionPrompt> {
-		return deepFreeze(structuredClone(this.actions.getPrompt(this.state)));
+	/** Full, omniscient copy of the state (hands, library order and seed included). */
+	exportState(): GameState {
+		return structuredClone(this.state);
 	}
 
 	submitInput(input: PlayerInput): InputResult {
@@ -103,14 +108,14 @@ export class GameEngine {
 					);
 				}
 				if (prompt.kind === "chooseAction") {
-					draft.pending = {
+					draft.pendingCtx = {
 						playerId: prompt.playerId,
 						candidateId: choice.id,
 						label: choice.label,
 						selections: [],
 					};
 				} else {
-					requirePending(draft).selections.push({
+					requirePendingCtx(draft).selections.push({
 						step: prompt.parameter,
 						optionId: choice.id,
 						label: choice.label,
@@ -123,7 +128,7 @@ export class GameEngine {
 				if (prompt.kind !== "confirm") {
 					throw new InvalidInputError("There is nothing to confirm yet.");
 				}
-				const pending = requirePending(draft);
+				const pending = requirePendingCtx(draft);
 				const candidate = this.actions.getCandidate(
 					draft,
 					pending.playerId,
@@ -131,19 +136,19 @@ export class GameEngine {
 				);
 				if (!candidate)
 					throw new Error(`Pending action "${pending.candidateId}" vanished`);
-				draft.pending = null;
+				draft.pendingCtx = null;
 				if (!candidate.passesPriority) draft.consecutivePasses = 0;
 				candidate.execute(draft, pending.selections);
 				return;
 			}
 
 			case "back": {
-				if (!draft.pending)
+				if (!draft.pendingCtx)
 					throw new InvalidInputError("There is nothing to go back from.");
-				if (draft.pending.selections.length > 0) {
-					draft.pending.selections.pop();
+				if (draft.pendingCtx.selections.length > 0) {
+					draft.pendingCtx.selections.pop();
 				} else {
-					draft.pending = null;
+					draft.pendingCtx = null;
 				}
 				return;
 			}
@@ -151,7 +156,7 @@ export class GameEngine {
 	}
 }
 
-function requirePending(draft: GameState): PendingAction {
-	if (!draft.pending) throw new Error("Expected a pending action");
-	return draft.pending;
+function requirePendingCtx(draft: GameState): PendingContext {
+	if (!draft.pendingCtx) throw new Error("Expected a pending context");
+	return draft.pendingCtx;
 }

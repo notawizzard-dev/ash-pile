@@ -14,9 +14,16 @@ export type {
 	GameResult,
 	GameState,
 	InputResult,
-	PendingAction,
+	PendingContext,
 	Permanent,
 	PlayerInput,
 	PlayerState,
+	ResolutionContext,
 	Selection,
 } from "./types";
+export type {
+	GameView,
+	PublicPlayerView,
+	ResolutionView,
+	ViewPrompt,
+} from "./view";

@@ -18,7 +18,7 @@ export interface SetupOptions {
 }
 
 function newPlayer(id: PlayerId, name: string): PlayerState {
-	return { id, name, hand: [], battlefield: [], graveyard: [] };
+	return { id, name, hand: [], battlefield: [] };
 }
 
 export class GameSetupService {
@@ -63,14 +63,18 @@ export class GameSetupService {
 			stack: [],
 			players,
 			library: this.deck.buildSharedDeck(copiesPerLand),
-			pending: null,
+			graveyard: [],
+			pendingCtx: null,
+			resolutionCtx: null,
 			log: [],
 		};
 
 		this.deck.shuffleLibrary(draft);
+		// The log is public, and the seed determines the library order, so the
+		// seed must not appear in it. It stays available via GameState.seed.
 		appendLog(
 			draft,
-			`Game start (seed ${seed}). Shared library: ${draft.library.length} cards.`,
+			`Game start. Shared library: ${draft.library.length} cards.`,
 		);
 
 		// Deal round-robin, one card at a time, from the shared library.
