@@ -1,3 +1,4 @@
+import { formatManaPool, type ManaPool } from "./mana";
 import { PHASE_LABELS, type Phase } from "./phases";
 import { opponentOf, PLAYER_IDS } from "./players";
 import type { GameState, PendingContext, PlayerId } from "./types";
@@ -32,6 +33,10 @@ function describeBattlefield(
 		name: p.tapped ? `${p.card.name} (tapped)` : p.card.name,
 	}));
 	return `Battlefield (${field.length}): ${summarizeCards(field)}`;
+}
+
+function describeManaPool(pool: Readonly<ManaPool>): string {
+	return `Mana pool: ${formatManaPool(pool)}`;
 }
 
 /** The fields the status line needs. Both GameState and GameView have them. */
@@ -97,6 +102,7 @@ export function renderBoard(state: GameState): string {
 			`    Hand (${player.hand.length}): ${summarizeCards(player.hand)}`,
 		);
 		lines.push(`    ${describeBattlefield(player.battlefield)}`);
+		lines.push(`    ${describeManaPool(player.manaPool)}`);
 	}
 	lines.push(
 		...sharedZoneLines({
@@ -130,6 +136,7 @@ export function renderView(view: GameView): string {
 				: `    Hand: ${player.handSize} cards`,
 		);
 		lines.push(`    ${describeBattlefield(player.battlefield)}`);
+		lines.push(`    ${describeManaPool(player.manaPool)}`);
 	}
 	lines.push(...sharedZoneLines(view));
 	if (view.pendingCtx) {

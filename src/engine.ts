@@ -1,8 +1,10 @@
 import type { ActionDefinition } from "./actions/action";
 import { PassPriorityAction } from "./actions/pass-priority";
 import { PlayLandAction } from "./actions/play-land";
+import { TapForManaAction } from "./actions/tap-for-mana";
 import { ActionService } from "./services/action-service";
 import { DeckService } from "./services/deck-service";
+import { ManaService } from "./services/mana-service";
 import { GameSetupService, type SetupOptions } from "./services/setup-service";
 import { TurnService } from "./services/turn-service";
 import { ViewService } from "./services/view-service";
@@ -42,9 +44,11 @@ export class GameEngine {
 
 	constructor(options: GameOptions = {}) {
 		const deck = new DeckService();
-		const turns = new TurnService(deck);
+		const mana = new ManaService();
+		const turns = new TurnService(deck, mana);
 		this.actions = new ActionService([
 			new PlayLandAction(),
+			new TapForManaAction(mana),
 			new PassPriorityAction(turns),
 			...(options.extraActions ?? []),
 		]);

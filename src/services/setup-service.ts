@@ -1,4 +1,5 @@
 import { BASIC_LAND_NAMES } from "../cards";
+import { emptyManaPool } from "../mana";
 import { PLAYER_COUNT, PLAYER_IDS, type PlayerId } from "../players";
 import { randomSeed } from "../rng";
 import type { GameState, PlayerState } from "../types";
@@ -7,7 +8,7 @@ import type { DeckService } from "./deck-service";
 import type { TurnService } from "./turn-service";
 
 export const OPENING_HAND_SIZE = 7;
-export const DEFAULT_COPIES_PER_LAND = 10;
+export const DEFAULT_COPIES_PER_LAND = 30;
 
 export interface SetupOptions {
 	/** Exactly two players for now. */
@@ -18,7 +19,7 @@ export interface SetupOptions {
 }
 
 function newPlayer(id: PlayerId, name: string): PlayerState {
-	return { id, name, hand: [], battlefield: [] };
+	return { id, name, hand: [], battlefield: [], manaPool: emptyManaPool() };
 }
 
 export class GameSetupService {

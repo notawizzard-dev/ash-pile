@@ -1,3 +1,4 @@
+import type { ManaPool } from "./mana";
 import type { Phase } from "./phases";
 import type { PlayerId } from "./players";
 
@@ -25,6 +26,8 @@ export interface PlayerState {
 	name: string;
 	hand: CardInstance[];
 	battlefield: Permanent[];
+	/** Floating mana. Empties at the end of every step and phase. */
+	manaPool: ManaPool;
 }
 
 /** Placeholder: the stack exists so priority rules are right, but nothing uses it yet. */
