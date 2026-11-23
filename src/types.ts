@@ -30,10 +30,13 @@ export interface PlayerState {
 	manaPool: ManaPool;
 }
 
-/** Placeholder: the stack exists so priority rules are right, but nothing uses it yet. */
+/** A spell on the stack. Abilities will join it as another `kind` later. */
 export interface StackItem {
 	id: string;
-	description: string;
+	kind: "spell";
+	/** The card being cast. It is on the stack, not in any other zone, until it resolves. */
+	card: CardInstance;
+	controllerId: PlayerId;
 }
 
 /** One answer the player has given while building up an action. */
@@ -100,6 +103,7 @@ export interface GameState {
 	priorityPlayerId: PlayerId | null;
 	/** Players who have passed in a row. Phase ends when everyone has. */
 	consecutivePasses: number;
+	/** Index 0 is the top of the stack (the next to resolve), as in the library. */
 	stack: StackItem[];
 
 	/** Exactly two players. p1 takes the first turn. */

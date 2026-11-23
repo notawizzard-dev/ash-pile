@@ -8,6 +8,7 @@ import type {
 	GameState,
 	InputResult,
 	PlayerId,
+	StackItem,
 } from "../src/types";
 import { decidingPlayerId } from "../src/util";
 import type { ViewPrompt } from "../src/view";
@@ -93,6 +94,18 @@ function count(
 
 function landOptionId(engine: GameEngine): string {
 	return must(optionIds(engine).find((id) => id.startsWith("play-land:")));
+}
+
+const DO_NOTHING = "Test Card (Do Nothing)";
+
+/** A Test Card (Do Nothing) on the stack, cast by `controllerId`. */
+function spellItem(cardId: string, controllerId: PlayerId): StackItem {
+	return {
+		id: `spell:${cardId}`,
+		kind: "spell",
+		card: { id: cardId, name: DO_NOTHING },
+		controllerId,
+	};
 }
 
 // ---------------------------------------------------------------------------
@@ -568,7 +581,7 @@ describe("player views", () => {
 				{ id: "wastes-1", name: "Wastes" },
 				{ id: "swamp-2", name: "Swamp" },
 			];
-			s.stack = [{ id: "stack-1", description: "A spell" }];
+			s.stack = [spellItem("do-nothing-9", P1)];
 		});
 		const v1 = engine.getView(P1);
 		const v2 = engine.getView(P2);
@@ -644,7 +657,7 @@ describe("player views", () => {
 		const view = engine.getView(P1);
 		view.hand.pop();
 		view.graveyard.push({ id: "x", name: "Swamp" });
-		view.stack.push({ id: "s", description: "fake" });
+		view.stack.push(spellItem("do-nothing-8", P2));
 		view.log.push("fake");
 		view.players.p2.handSize = 0;
 		must(view.players.p1.battlefield[0]).tapped = true;
@@ -844,13 +857,212 @@ describe("mana", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Casting and resolving a spell (Test Card (Do Nothing): an instant costing {1})
+// ---------------------------------------------------------------------------
+
+/**
+ * Main 1 with a Test Card (Do Nothing) in each hand (ids do-nothing-1 for p1
+ * and do-nothing-2 for p2). `tweak` can adjust the state, e.g. to float mana.
+ */
+function castScenario(tweak?: (state: GameState) => void): GameEngine {
+	return scenario([], (s) => {
+		s.players.p1.hand.push({ id: "do-nothing-1", name: DO_NOTHING });
+		s.players.p2.hand.push({ id: "do-nothing-2", name: DO_NOTHING });
+		tweak?.(s);
+	});
+}
+
+function castOptionIds(engine: GameEngine): string[] {
+	return optionIds(engine).filter((id) => id.startsWith("cast:"));
+}
+
+function graveyardIds(engine: GameEngine): string[] {
+	return engine.exportState().graveyard.map((c) => c.id);
+}
+
+describe("casting and resolving a spell", () => {
+	it("is only offered once the player has mana floating to pay for it", () => {
+		const engine = castScenario();
+		assert.deepEqual(castOptionIds(engine), []);
+		tap(engine, "tap-mana:swamp-a");
+		assert.deepEqual(castOptionIds(engine), ["cast:do-nothing-1"]);
+	});
+
+	it("is paid for with colorless mana first, keeping black mana", () => {
+		const engine = castScenario((s) => {
+			s.players.p1.manaPool = { B: 1, C: 1 };
+		});
+		tap(engine, "cast:do-nothing-1");
+		assert.deepEqual(engine.exportState().players.p1.manaPool, { B: 1, C: 0 });
+	});
+
+	it("can be paid for with black mana when that's all there is", () => {
+		const engine = castScenario((s) => {
+			s.players.p1.manaPool = { B: 1, C: 0 };
+		});
+		tap(engine, "cast:do-nothing-1");
+		assert.deepEqual(engine.exportState().players.p1.manaPool, { B: 0, C: 0 });
+	});
+
+	it("moves the card from the hand to the stack, and the caster keeps priority", () => {
+		const engine = castScenario((s) => {
+			s.players.p1.manaPool = { B: 0, C: 1 };
+		});
+		ok(select(engine, "cast:do-nothing-1"));
+		const considering = engine.exportState();
+		assert.equal(considering.stack.length, 0, "nothing happens until confirm");
+		assert.equal(prompt(engine).kind, "confirm");
+
+		ok(confirm(engine));
+		const state = engine.exportState();
+		assert.equal(count(state.players.p1.hand, DO_NOTHING), 0);
+		assert.deepEqual(
+			state.stack.map((i) => [i.id, i.kind, i.card.id, i.controllerId]),
+			[["spell:do-nothing-1", "spell", "do-nothing-1", P1]],
+		);
+		assert.deepEqual(state.players.p1.manaPool, { B: 0, C: 0 });
+		assert.equal(state.priorityPlayerId, P1);
+		assert.equal(state.consecutivePasses, 0);
+		assert.ok(state.log.includes("Player 1 casts Test Card (Do Nothing)."));
+		assert.ok(
+			!optionIds(engine).some((id) => id.startsWith("play-land:")),
+			"no land drops while the stack is not empty",
+		);
+	});
+
+	it("can be cast at instant speed: outside main phases, and on the opponent's turn", () => {
+		const engine = castScenario((s) => {
+			s.phase = "combat";
+			s.players.p1.manaPool = { B: 0, C: 1 };
+			s.players.p2.manaPool = { B: 0, C: 1 };
+		});
+		assert.deepEqual(castOptionIds(engine), ["cast:do-nothing-1"]);
+		pass(engine);
+		assert.equal(holder(engine), P2);
+		assert.deepEqual(castOptionIds(engine), ["cast:do-nothing-2"]);
+	});
+
+	it("resolves once everyone has passed: to the graveyard, in the same phase", () => {
+		const engine = castScenario((s) => {
+			s.players.p1.manaPool = { B: 0, C: 1 };
+		});
+		tap(engine, "cast:do-nothing-1");
+		pass(engine);
+		assert.equal(engine.exportState().stack.length, 1, "still on the stack");
+		pass(engine);
+
+		const state = engine.exportState();
+		assert.equal(state.stack.length, 0);
+		assert.deepEqual(graveyardIds(engine), ["do-nothing-1"]);
+		assert.equal(count(state.players.p1.hand, DO_NOTHING), 0);
+		assert.equal(state.phase, "main1", "resolving doesn't end the phase");
+		assert.equal(state.priorityPlayerId, P1);
+		assert.equal(state.consecutivePasses, 0);
+		assert.ok(state.log.includes("Test Card (Do Nothing) resolves."));
+
+		passPhase(engine);
+		assert.equal(engine.exportState().phase, "combat");
+	});
+
+	it("gives the active player priority after it resolves, even if the opponent cast it", () => {
+		const engine = castScenario((s) => {
+			s.players.p2.manaPool = { B: 0, C: 1 };
+		});
+		pass(engine); // p1 passes; p2 holds priority
+		tap(engine, "cast:do-nothing-2");
+		pass(engine); // p2 passes
+		pass(engine); // p1 passes: it resolves
+		const state = engine.exportState();
+		assert.deepEqual(graveyardIds(engine), ["do-nothing-2"]);
+		assert.equal(state.stack.length, 0);
+		assert.equal(state.priorityPlayerId, P1);
+		assert.equal(state.phase, "main1");
+	});
+
+	it("resolves responses first, and the shared graveyard keeps the order", () => {
+		const engine = castScenario((s) => {
+			s.players.p1.manaPool = { B: 0, C: 1 };
+			s.players.p2.manaPool = { B: 0, C: 1 };
+		});
+		tap(engine, "cast:do-nothing-1");
+		pass(engine);
+		tap(engine, "cast:do-nothing-2"); // p2 responds
+		assert.deepEqual(
+			engine.exportState().stack.map((i) => i.id),
+			["spell:do-nothing-2", "spell:do-nothing-1"],
+			"the most recent spell is on top",
+		);
+
+		pass(engine);
+		pass(engine);
+		assert.deepEqual(
+			engine.exportState().stack.map((i) => i.id),
+			["spell:do-nothing-1"],
+		);
+		assert.deepEqual(graveyardIds(engine), ["do-nothing-2"]);
+		assert.equal(holder(engine), P1);
+
+		passPhase(engine);
+		assert.equal(engine.exportState().stack.length, 0);
+		assert.deepEqual(
+			graveyardIds(engine),
+			["do-nothing-1", "do-nothing-2"],
+			"the card that resolved last is on top",
+		);
+		assert.equal(engine.exportState().phase, "main1");
+	});
+
+	it("tells the player what passing will do", () => {
+		const engine = castScenario((s) => {
+			s.players.p1.manaPool = { B: 0, C: 1 };
+		});
+		tap(engine, "cast:do-nothing-1");
+		const summary = () => {
+			ok(select(engine, "pass-priority"));
+			const p = prompt(engine);
+			assert.ok(p.kind === "confirm");
+			return p.summary;
+		};
+		assert.equal(summary(), "Pass priority to Player 2");
+		ok(back(engine));
+		pass(engine);
+		assert.equal(
+			summary(),
+			"Pass priority. Everyone has passed, so Test Card (Do Nothing) resolves",
+		);
+	});
+
+	it("shows the spell on the stack to both players", () => {
+		const engine = castScenario((s) => {
+			s.players.p1.manaPool = { B: 0, C: 1 };
+		});
+		tap(engine, "cast:do-nothing-1");
+		const v1 = engine.getView(P1);
+		const v2 = engine.getView(P2);
+		assert.deepEqual(v1.stack, v2.stack);
+		assert.equal(v2.stack[0]?.card.name, DO_NOTHING);
+		assert.equal(v2.players.p1.handSize, v1.hand.length);
+	});
+
+	it("never puts a test card in the shared deck", () => {
+		const state = new GameEngine({ seed: 1 }).exportState();
+		const all = [
+			...state.players.p1.hand,
+			...state.players.p2.hand,
+			...state.library,
+		];
+		assert.equal(count(all, DO_NOTHING), 0);
+	});
+});
+
+// ---------------------------------------------------------------------------
 // Resolution context (groundwork: nothing sets it yet, but the shape is in place)
 // ---------------------------------------------------------------------------
 
 describe("resolution context", () => {
 	function resolvingScenario(controllerId: PlayerId = P2): GameEngine {
 		return scenario([], (s) => {
-			s.stack = [{ id: "s1", description: "A spell" }];
+			s.stack = [{ ...spellItem("do-nothing-9", P2), id: "s1" }];
 			s.priorityPlayerId = null;
 			s.resolutionCtx = {
 				kind: "spell",

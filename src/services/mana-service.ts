@@ -1,5 +1,10 @@
 import { getCardDefinition } from "../cards";
-import { emptyManaPool } from "../mana";
+import {
+	emptyManaPool,
+	formatManaCost,
+	type ManaCost,
+	payFromPool,
+} from "../mana";
 import { PLAYER_IDS } from "../players";
 import type { GameState, PlayerId } from "../types";
 import { appendLog, getPlayer } from "../util";
@@ -32,6 +37,16 @@ export class ManaService {
 			draft,
 			`${player.name} taps ${permanent.card.name} for {${mana}}.`,
 		);
+	}
+
+	/** Spend `cost` from the player's floating mana. Throws if they can't pay it. */
+	payCost(draft: GameState, playerId: PlayerId, cost: ManaCost): void {
+		const player = getPlayer(draft, playerId);
+		const remaining = payFromPool(player.manaPool, cost);
+		if (!remaining) {
+			throw new Error(`${player.name} cannot pay ${formatManaCost(cost)}`);
+		}
+		player.manaPool = remaining;
 	}
 
 	/** Mana empties from every pool as each step and phase ends. */

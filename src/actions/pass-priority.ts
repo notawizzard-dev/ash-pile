@@ -17,8 +17,8 @@ export class PassPriorityAction implements ActionDefinition {
 			return [];
 		}
 
-		const endsPhase =
-			state.stack.length === 0 && state.consecutivePasses + 1 >= PLAYER_COUNT;
+		const everyonePasses = state.consecutivePasses + 1 >= PLAYER_COUNT;
+		const topSpell = state.stack[0];
 		const nextName = viewPlayer(state, opponentOf(playerId)).name;
 		const phaseLabel = PHASE_LABELS[state.phase];
 
@@ -28,10 +28,14 @@ export class PassPriorityAction implements ActionDefinition {
 				label: "Pass priority",
 				passesPriority: true,
 				steps: [],
-				summarize: () =>
-					endsPhase
-						? `Pass priority. Everyone has passed, so the ${phaseLabel} phase ends`
-						: `Pass priority to ${nextName}`,
+				summarize: () => {
+					if (!everyonePasses) {
+						return `Pass priority to ${nextName}`;
+					}
+					return topSpell
+						? `Pass priority. Everyone has passed, so ${topSpell.card.name} resolves`
+						: `Pass priority. Everyone has passed, so the ${phaseLabel} phase ends`;
+				},
 				execute: (draft: GameState) => {
 					appendLog(
 						draft,

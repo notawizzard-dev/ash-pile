@@ -7,6 +7,7 @@ export { GameEngine, type GameOptions } from "./engine";
 export {
 	formatManaPool,
 	MANA_TYPES,
+	type ManaCost,
 	type ManaPool,
 	type ManaType,
 } from "./mana";
@@ -26,6 +27,7 @@ export type {
 	PlayerState,
 	ResolutionContext,
 	Selection,
+	StackItem,
 } from "./types";
 export type {
 	GameView,
