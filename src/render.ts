@@ -72,7 +72,7 @@ export function renderConsidering(pending: PendingContext): string {
 function sharedZoneLines(zones: {
 	librarySize: number;
 	graveyard: readonly { readonly name: string }[];
-	stack: readonly { readonly description: string }[];
+	stack: readonly { readonly card: { readonly name: string } }[];
 }): string[] {
 	const lines = [
 		`  Shared library: ${zones.librarySize} cards`,
@@ -80,7 +80,7 @@ function sharedZoneLines(zones: {
 	];
 	if (zones.stack.length > 0) {
 		lines.push(
-			`  Stack (${zones.stack.length}): ${zones.stack.map((s) => s.description).join(", ")}`,
+			`  Stack (${zones.stack.length}, top first): ${zones.stack.map((s) => s.card.name).join(", ")}`,
 		);
 	}
 	return lines;

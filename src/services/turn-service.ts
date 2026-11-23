@@ -4,6 +4,7 @@ import type { GameState, PlayerId } from "../types";
 import { appendLog, getPlayer, priorityHolderOf } from "../util";
 import type { DeckService } from "./deck-service";
 import type { ManaService } from "./mana-service";
+import type { ResolutionService } from "./resolution-service";
 
 /**
  * Turn structure and priority. All methods mutate the draft they are given;
@@ -13,6 +14,7 @@ export class TurnService {
 	constructor(
 		private readonly deck: DeckService,
 		private readonly mana: ManaService,
+		private readonly resolution: ResolutionService,
 	) {}
 
 	beginGame(draft: GameState): void {
@@ -23,7 +25,10 @@ export class TurnService {
 		this.enterPhase(draft, "untap");
 	}
 
-	/** The priority holder passes. When everyone has passed in a row, the phase ends. */
+	/**
+	 * The priority holder passes. When everyone has passed in a row, the top of
+	 * the stack resolves, or, if the stack is empty, the phase ends.
+	 */
 	passPriority(draft: GameState): void {
 		draft.consecutivePasses += 1;
 		if (draft.consecutivePasses < PLAYER_COUNT) {
@@ -31,7 +36,11 @@ export class TurnService {
 			return;
 		}
 		if (draft.stack.length > 0) {
-			throw new Error("Stack resolution is not implemented yet.");
+			this.resolution.resolveTopOfStack(draft);
+			// Afterwards the active player receives priority, and passing starts over.
+			draft.consecutivePasses = 0;
+			draft.priorityPlayerId = draft.activePlayerId;
+			return;
 		}
 		this.advancePhase(draft);
 	}
