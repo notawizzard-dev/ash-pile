@@ -24,11 +24,11 @@ export interface GameOptions extends SetupOptions {
 /**
  * The public face of the rules engine. Three things you can do:
  *
- *   getView(playerId) observe the game as that player sees it, including what
- *                     they are being asked to decide next
- *   submitInput()     answer; the only way the game state ever changes
- *   exportState()     the full, omniscient state, for saving, tests and
- *                     debugging only. Never hand this to a player's client.
+ * - `getView(playerId)`: observe the game as that player sees it, including what
+ *                        they are being asked to decide next
+ * - `submitInput()`:     answer; the only way the game state ever changes
+ * - `exportState()`:     the full, omniscient state, for saving, tests and
+ *                        debugging only. Never hand this to a player's client.
  *
  * Everything handed out is a fresh deep copy, so callers cannot reach the
  * engine's own state. Inside submitInput the engine works on a private draft
@@ -78,8 +78,9 @@ export class GameEngine {
 		try {
 			this.applyInput(draft, input);
 		} catch (error) {
-			if (error instanceof InvalidInputError)
+			if (error instanceof InvalidInputError) {
 				return { ok: false, error: error.message };
+			}
 			throw error; // a real bug: surface it. `this.state` is untouched.
 		}
 		this.state = draft;
@@ -88,8 +89,9 @@ export class GameEngine {
 
 	private applyInput(draft: GameState, input: PlayerInput): void {
 		const prompt = this.actions.getPrompt(draft);
-		if (prompt.kind === "gameOver")
+		if (prompt.kind === "gameOver") {
 			throw new InvalidInputError("The game is over.");
+		}
 		if (input.playerId !== prompt.playerId) {
 			throw new InvalidInputError(
 				`It is ${getPlayer(draft, prompt.playerId).name}'s decision.`,
@@ -134,17 +136,21 @@ export class GameEngine {
 					pending.playerId,
 					pending.candidateId,
 				);
-				if (!candidate)
+				if (!candidate) {
 					throw new Error(`Pending action "${pending.candidateId}" vanished`);
+				}
 				draft.pendingCtx = null;
-				if (!candidate.passesPriority) draft.consecutivePasses = 0;
+				if (!candidate.passesPriority) {
+					draft.consecutivePasses = 0;
+				}
 				candidate.execute(draft, pending.selections);
 				return;
 			}
 
 			case "back": {
-				if (!draft.pendingCtx)
+				if (!draft.pendingCtx) {
 					throw new InvalidInputError("There is nothing to go back from.");
+				}
 				if (draft.pendingCtx.selections.length > 0) {
 					draft.pendingCtx.selections.pop();
 				} else {
@@ -157,6 +163,8 @@ export class GameEngine {
 }
 
 function requirePendingCtx(draft: GameState): PendingContext {
-	if (!draft.pendingCtx) throw new Error("Expected a pending context");
+	if (!draft.pendingCtx) {
+		throw new Error("Expected a pending context");
+	}
 	return draft.pendingCtx;
 }

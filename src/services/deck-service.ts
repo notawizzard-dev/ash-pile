@@ -24,7 +24,9 @@ export class DeckService {
 	/** Move the top card of the shared library into a player's hand. Null if the library is empty. */
 	drawCard(draft: GameState, playerId: PlayerId): CardInstance | null {
 		const card = draft.library.shift();
-		if (!card) return null;
+		if (!card) {
+			return null;
+		}
 		getPlayer(draft, playerId).hand.push(card);
 		return card;
 	}

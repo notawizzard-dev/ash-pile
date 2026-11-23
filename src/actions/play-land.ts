@@ -11,11 +11,21 @@ export class PlayLandAction implements ActionDefinition {
 		state: DeepReadonly<GameState>,
 		playerId: PlayerId,
 	): ActionCandidate[] {
-		if (state.resolutionCtx) return [];
-		if (state.activePlayerId !== playerId) return [];
-		if (state.phase !== "main1" && state.phase !== "main2") return [];
-		if (state.stack.length > 0) return [];
-		if (state.landsPlayedThisTurn >= LAND_DROPS_PER_TURN) return [];
+		if (state.resolutionCtx) {
+			return [];
+		}
+		if (state.activePlayerId !== playerId) {
+			return [];
+		}
+		if (state.phase !== "main1" && state.phase !== "main2") {
+			return [];
+		}
+		if (state.stack.length > 0) {
+			return [];
+		}
+		if (state.landsPlayedThisTurn >= LAND_DROPS_PER_TURN) {
+			return [];
+		}
 
 		return viewPlayer(state, playerId)
 			.hand.filter(isLand)
@@ -30,8 +40,9 @@ export class PlayLandAction implements ActionDefinition {
 					const player = getPlayer(draft, playerId);
 					const index = player.hand.findIndex((c) => c.id === card.id);
 					const moved = player.hand[index];
-					if (!moved)
+					if (!moved) {
 						throw new Error(`${card.id} is not in ${player.name}'s hand`);
+					}
 					player.hand.splice(index, 1);
 					player.battlefield.push({
 						card: moved,

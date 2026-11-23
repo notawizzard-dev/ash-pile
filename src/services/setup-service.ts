@@ -79,7 +79,9 @@ export class GameSetupService {
 
 		// Deal round-robin, one card at a time, from the shared library.
 		for (let i = 0; i < OPENING_HAND_SIZE; i++) {
-			for (const id of PLAYER_IDS) this.deck.drawCard(draft, id);
+			for (const id of PLAYER_IDS) {
+				this.deck.drawCard(draft, id);
+			}
 		}
 		appendLog(
 			draft,

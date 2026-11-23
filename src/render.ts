@@ -5,10 +5,13 @@ import type { GameView, ViewPrompt } from "./view";
 
 /** Collapses duplicates ("Swamp x2"). For unordered zones. */
 function summarizeCards(cards: readonly { readonly name: string }[]): string {
-	if (cards.length === 0) return "-";
+	if (cards.length === 0) {
+		return "-";
+	}
 	const counts = new Map<string, number>();
-	for (const card of cards)
+	for (const card of cards) {
 		counts.set(card.name, (counts.get(card.name) ?? 0) + 1);
+	}
 	return [...counts]
 		.map(([name, n]) => (n > 1 ? `${name} x${n}` : name))
 		.join(", ");
@@ -44,7 +47,9 @@ interface StatusFields {
 
 /** One-line status, shown after every input. */
 export function renderStatus(state: StatusFields): string {
-	if (state.status === "finished") return "== Game over ==";
+	if (state.status === "finished") {
+		return "== Game over ==";
+	}
 	const active = state.players[state.activePlayerId];
 	const focus = state.resolutionCtx
 		? `resolving, ${state.players[state.resolutionCtx.controllerId].name} decides`

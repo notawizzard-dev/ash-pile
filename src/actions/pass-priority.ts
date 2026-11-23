@@ -13,7 +13,9 @@ export class PassPriorityAction implements ActionDefinition {
 		playerId: PlayerId,
 	): ActionCandidate[] {
 		// Nobody holds priority while an event is resolving.
-		if (state.resolutionCtx) return [];
+		if (state.resolutionCtx) {
+			return [];
+		}
 
 		const endsPhase =
 			state.stack.length === 0 && state.consecutivePasses + 1 >= PLAYER_COUNT;

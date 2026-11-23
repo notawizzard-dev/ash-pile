@@ -27,7 +27,9 @@ const HELP = `Commands:
 
 function parseSeed(argv: string[]): number | undefined {
 	const i = argv.indexOf("--seed");
-	if (i < 0) return undefined;
+	if (i < 0) {
+		return undefined;
+	}
 	const value = Number(argv[i + 1]);
 	if (!Number.isInteger(value) || value < 0) {
 		console.error("--seed needs a non-negative integer");
@@ -51,7 +53,9 @@ function show(opts: { board: boolean }): void {
 		console.log(renderBoard(engine.exportState()));
 	} else {
 		console.log(renderStatus(view));
-		if (view.pendingCtx) console.log(renderConsidering(view.pendingCtx));
+		if (view.pendingCtx) {
+			console.log(renderConsidering(view.pendingCtx));
+		}
 	}
 	console.log(renderPrompt(view.prompt, view.players));
 }
@@ -66,8 +70,13 @@ function submit(
 		return undefined;
 	}
 	const result = engine.submitInput(build(view.viewerId));
-	if (!result.ok) console.log(`! ${result.error}`);
-	else for (const line of result.log) console.log(`  . ${line}`);
+	if (!result.ok) {
+		console.log(`! ${result.error}`);
+	} else {
+		for (const line of result.log) {
+			console.log(`  . ${line}`);
+		}
+	}
 	return result;
 }
 
@@ -149,7 +158,9 @@ function handle(line: string): { quit?: boolean; board?: boolean } {
 				playerId,
 				optionId: "pass-priority",
 			}));
-			if (!select?.ok) return {};
+			if (!select?.ok) {
+				return {};
+			}
 			const confirm = submit((playerId) => ({ type: "confirm", playerId }));
 			return { board: changedBoard(confirm) };
 		}
@@ -185,7 +196,9 @@ const run = async () => {
 	rl.prompt();
 	for await (const line of rl) {
 		const outcome = handle(line.trim());
-		if (outcome.quit) break;
+		if (outcome.quit) {
+			break;
+		}
 		show({ board: outcome.board === true });
 		rl.prompt();
 	}

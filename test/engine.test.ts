@@ -78,8 +78,9 @@ function passPhase(engine: GameEngine): void {
 }
 
 function advanceTo(engine: GameEngine, phase: string): void {
-	for (let i = 0; i < 40 && engine.exportState().phase !== phase; i++)
+	for (let i = 0; i < 40 && engine.exportState().phase !== phase; i++) {
 		passPhase(engine);
+	}
 	assert.equal(engine.exportState().phase, phase);
 }
 
@@ -283,7 +284,9 @@ describe("back and invalid input", () => {
 			engine.submitInput({ type: "confirm", playerId: P1 }), // nothing to confirm
 			engine.submitInput({ type: "back", playerId: P1 }), // nothing to back out of
 		];
-		for (const result of attempts) assert.equal(result.ok, false);
+		for (const result of attempts) {
+			assert.equal(result.ok, false);
+		}
 		assert.equal(JSON.stringify(engine.exportState()), snapshot);
 	});
 
@@ -304,10 +307,14 @@ class FakeBiteDown implements ActionDefinition {
 		state: DeepReadonly<GameState>,
 		playerId: PlayerId,
 	): ActionCandidate[] {
-		if (state.activePlayerId !== playerId || state.phase !== "main1") return [];
+		if (state.activePlayerId !== playerId || state.phase !== "main1") {
+			return [];
+		}
 		const mine = state.players[playerId].battlefield;
 		const theirs = state.players[opponentOf(playerId)].battlefield;
-		if (mine.length === 0 || theirs.length === 0) return [];
+		if (mine.length === 0 || theirs.length === 0) {
+			return [];
+		}
 
 		return [
 			{

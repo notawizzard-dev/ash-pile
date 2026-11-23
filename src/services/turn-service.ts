@@ -61,7 +61,9 @@ export class TurnService {
 		switch (phase) {
 			case "untap":
 				// Turn-based action only: no priority is given during the untap step.
-				for (const permanent of active.battlefield) permanent.tapped = false;
+				for (const permanent of active.battlefield) {
+					permanent.tapped = false;
+				}
 				this.advancePhase(draft);
 				return;
 

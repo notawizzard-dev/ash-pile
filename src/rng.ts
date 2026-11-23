@@ -31,8 +31,9 @@ export class Rng {
 			const j = Math.floor(this.next() * (i + 1));
 			const a = items[i];
 			const b = items[j];
-			if (a === undefined || b === undefined)
+			if (a === undefined || b === undefined) {
 				throw new Error("shuffle index out of range");
+			}
 			items[i] = b;
 			items[j] = a;
 		}

@@ -22,7 +22,9 @@ export class ActionService {
 		for (const definition of this.definitions) {
 			for (const candidate of definition.candidates(state, playerId)) {
 				const group = candidate.groupKey ?? candidate.id;
-				if (seenGroups.has(group)) continue;
+				if (seenGroups.has(group)) {
+					continue;
+				}
 				if (seenIds.has(candidate.id)) {
 					throw new Error(
 						`Two different actions share the id "${candidate.id}"`,

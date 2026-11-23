@@ -21,7 +21,9 @@ const DEFINITIONS = new Map<string, CardDefinition>(
 
 export function getCardDefinition(name: string): CardDefinition {
 	const definition = DEFINITIONS.get(name);
-	if (!definition) throw new Error(`Unknown card: ${name}`);
+	if (!definition) {
+		throw new Error(`Unknown card: ${name}`);
+	}
 	return definition;
 }
 
