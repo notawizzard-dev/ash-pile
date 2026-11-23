@@ -3,13 +3,17 @@ import { opponentOf, PLAYER_COUNT } from "../players";
 import type { GameState, PlayerId } from "../types";
 import { appendLog, getPlayer, priorityHolderOf } from "../util";
 import type { DeckService } from "./deck-service";
+import type { ManaService } from "./mana-service";
 
 /**
  * Turn structure and priority. All methods mutate the draft they are given;
  * they are only ever called from inside GameEngine.submitInput.
  */
 export class TurnService {
-	constructor(private readonly deck: DeckService) {}
+	constructor(
+		private readonly deck: DeckService,
+		private readonly mana: ManaService,
+	) {}
 
 	beginGame(draft: GameState): void {
 		appendLog(
@@ -54,6 +58,8 @@ export class TurnService {
 
 	private enterPhase(draft: GameState, phase: Phase): void {
 		const active = getPlayer(draft, draft.activePlayerId);
+		// The previous step or phase has ended, so floating mana disappears.
+		this.mana.emptyPools(draft);
 		draft.phase = phase;
 		draft.consecutivePasses = 0;
 		draft.priorityPlayerId = active.id;

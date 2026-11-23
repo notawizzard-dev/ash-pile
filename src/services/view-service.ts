@@ -23,6 +23,7 @@ export class ViewService {
 				name: player.name,
 				handSize: player.hand.length,
 				battlefield: structuredClone(player.battlefield),
+				manaPool: { ...player.manaPool },
 			};
 		}
 

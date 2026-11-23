@@ -100,19 +100,20 @@ function landOptionId(engine: GameEngine): string {
 // ---------------------------------------------------------------------------
 
 describe("setup", () => {
-	it("deals seven cards each from a shared 50-card deck of basic lands", () => {
+	it("deals seven cards each from a shared 60-card deck of 30 Swamps and 30 Wastes", () => {
 		const state = new GameEngine({ seed: 1 }).exportState();
 		const { p1, p2 } = state.players;
 		assert.equal(p1.hand.length, 7);
 		assert.equal(p2.hand.length, 7);
-		assert.equal(state.library.length, 50 - 14);
+		assert.equal(state.library.length, 60 - 14);
 		assert.deepEqual(state.graveyard, []);
 
 		const all = [...p1.hand, ...p2.hand, ...state.library];
-		for (const land of ["Plains", "Island", "Swamp", "Mountain", "Forest"]) {
-			assert.equal(count(all, land), 10, land);
+		for (const land of ["Swamp", "Wastes"]) {
+			assert.equal(count(all, land), 30, land);
 		}
-		assert.equal(new Set(all.map((c) => c.id)).size, 50, "card ids are unique");
+		assert.equal(all.length, 60, "no other cards are in the deck");
+		assert.equal(new Set(all.map((c) => c.id)).size, 60, "card ids are unique");
 	});
 
 	it("is reproducible from a seed, and differs between seeds", () => {
@@ -163,7 +164,7 @@ describe("priority and phases", () => {
 		advanceTo(engine, "main1");
 		const state = engine.exportState();
 		assert.equal(state.players.p1.hand.length, 7);
-		assert.equal(state.library.length, 36);
+		assert.equal(state.library.length, 46);
 	});
 
 	it("rolls over to the next player, who draws and gets a fresh land drop", () => {
@@ -185,7 +186,7 @@ describe("priority and phases", () => {
 		advanceTo(engine, "main1");
 		state = engine.exportState();
 		assert.equal(state.players.p2.hand.length, 8, "drew for the turn");
-		assert.equal(state.library.length, 35);
+		assert.equal(state.library.length, 45);
 		assert.ok(optionIds(engine).some((id) => id.startsWith("play-land:")));
 	});
 });
@@ -227,7 +228,7 @@ describe("playing a land", () => {
 		advanceTo(engine, "main1");
 		ok(select(engine, landOptionId(engine)));
 		ok(confirm(engine));
-		assert.deepEqual(optionIds(engine), ["pass-priority"]);
+		assert.ok(!optionIds(engine).some((id) => id.startsWith("play-land:")));
 	});
 
 	it("collapses identical lands in hand into one option", () => {
@@ -365,7 +366,7 @@ class FakeExplode implements ActionDefinition {
 }
 
 /**
- * A game in the first main phase with a Mountain (p1) and an Island (p2) on
+ * A game in the first main phase with a Swamp (p1) and a Wastes (p2) on
  * the battlefield. `tweak` can adjust the state further before the engine is
  * built from it.
  */
@@ -376,12 +377,12 @@ function scenario(
 	const base = new GameEngine({ seed: 1 }).exportState();
 	base.phase = "main1";
 	base.players.p1.battlefield.push({
-		card: { id: "mountain-a", name: "Mountain" },
+		card: { id: "swamp-a", name: "Swamp" },
 		controllerId: P1,
 		tapped: false,
 	});
 	base.players.p2.battlefield.push({
-		card: { id: "island-b", name: "Island" },
+		card: { id: "wastes-b", name: "Wastes" },
 		controllerId: P2,
 		tapped: false,
 	});
@@ -408,27 +409,27 @@ describe("nested parameter selection", () => {
 		assert.equal(p.parameter, "source");
 		assert.deepEqual(
 			p.options.map((o) => o.id),
-			["mountain-a"],
+			["swamp-a"],
 		);
 		assert.equal(engine.exportState().pendingCtx?.label, "Cast Bite Down");
 
-		ok(select(engine, "mountain-a"));
+		ok(select(engine, "swamp-a"));
 		p = prompt(engine);
 		assert.ok(p.kind === "chooseParameter");
 		assert.equal(p.parameter, "target");
 		assert.deepEqual(
 			p.options.map((o) => o.id),
-			["island-b"],
+			["wastes-b"],
 		);
 		assert.deepEqual(
 			p.selections.map((s) => s.optionId),
-			["mountain-a"],
+			["swamp-a"],
 		);
 
-		ok(select(engine, "island-b"));
+		ok(select(engine, "wastes-b"));
 		p = prompt(engine);
 		assert.ok(p.kind === "confirm");
-		assert.equal(p.summary, "Bite Down: Mountain -> Island");
+		assert.equal(p.summary, "Bite Down: Swamp -> Wastes");
 		assert.equal(
 			engine.exportState().log.some((l) => l.startsWith("Bite Down resolves")),
 			false,
@@ -439,7 +440,7 @@ describe("nested parameter selection", () => {
 		assert.ok(
 			engine
 				.exportState()
-				.log.includes("Bite Down resolves: mountain-a -> island-b"),
+				.log.includes("Bite Down resolves: swamp-a -> wastes-b"),
 		);
 		assert.equal(engine.exportState().pendingCtx, null);
 		assert.equal(prompt(engine).kind, "chooseAction");
@@ -448,7 +449,7 @@ describe("nested parameter selection", () => {
 	it("steps back one parameter at a time", () => {
 		const engine = scenario([new FakeBiteDown()]);
 		ok(select(engine, "cast:bite-down"));
-		ok(select(engine, "mountain-a"));
+		ok(select(engine, "swamp-a"));
 		assert.equal(
 			(prompt(engine) as { parameter?: string }).parameter,
 			"target",
@@ -468,9 +469,9 @@ describe("nested parameter selection", () => {
 		const engine = scenario([new FakeBiteDown()]);
 		ok(select(engine, "cast:bite-down"));
 		assert.equal(
-			select(engine, "island-b").ok,
+			select(engine, "wastes-b").ok,
 			false,
-			"island-b is a target, not a source",
+			"wastes-b is a target, not a source",
 		);
 		assert.equal(
 			(prompt(engine) as { parameter?: string }).parameter,
@@ -531,7 +532,7 @@ describe("player views", () => {
 
 	it("shows only the size of the library, and leaves out the seed and RNG state", () => {
 		const view = new GameEngine({ seed: 1 }).getView(P1);
-		assert.equal(view.librarySize, 36);
+		assert.equal(view.librarySize, 46);
 		for (const key of ["library", "seed", "rngState"]) {
 			assert.equal(key in view, false, `"${key}" must not be in a view`);
 		}
@@ -564,8 +565,8 @@ describe("player views", () => {
 		const engine = scenario([], (s) => {
 			s.graveyard = [
 				{ id: "swamp-1", name: "Swamp" },
-				{ id: "island-1", name: "Island" },
-				{ id: "plains-1", name: "Plains" },
+				{ id: "wastes-1", name: "Wastes" },
+				{ id: "swamp-2", name: "Swamp" },
 			];
 			s.stack = [{ id: "stack-1", description: "A spell" }];
 		});
@@ -574,7 +575,7 @@ describe("player views", () => {
 
 		assert.deepEqual(
 			v1.graveyard.map((c) => c.id),
-			["swamp-1", "island-1", "plains-1"],
+			["swamp-1", "wastes-1", "swamp-2"],
 			"the shared graveyard keeps its order",
 		);
 		assert.deepEqual(v1.graveyard, v2.graveyard);
@@ -663,7 +664,7 @@ describe("player views", () => {
 		base.turnNumber = 99;
 		base.library.length = 0;
 		assert.equal(engine.exportState().turnNumber, 1);
-		assert.equal(engine.exportState().library.length, 36);
+		assert.equal(engine.exportState().library.length, 46);
 	});
 
 	it("keeps state and views plain data that survives a JSON round trip", () => {
@@ -678,6 +679,166 @@ describe("player views", () => {
 		for (const id of [P1, P2] as const) {
 			const view = engine.getView(id);
 			assert.deepEqual(JSON.parse(JSON.stringify(view)), view);
+		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Mana: tapping lands, floating mana, emptying at the end of each phase
+// ---------------------------------------------------------------------------
+
+function tapOptionIds(engine: GameEngine): string[] {
+	return optionIds(engine).filter((id) => id.startsWith("tap-mana:"));
+}
+
+function tap(engine: GameEngine, optionId: string): void {
+	ok(select(engine, optionId));
+	ok(confirm(engine));
+}
+
+describe("mana", () => {
+	it("taps a land for its mana, which floats in the pool", () => {
+		const engine = scenario([]);
+		assert.ok(tapOptionIds(engine).includes("tap-mana:swamp-a"));
+
+		ok(select(engine, "tap-mana:swamp-a"));
+		const considering = engine.exportState();
+		assert.equal(considering.players.p1.manaPool.B, 0, "nothing until confirm");
+		assert.equal(prompt(engine).kind, "confirm");
+
+		ok(confirm(engine));
+		const state = engine.exportState();
+		const swamp = must(
+			state.players.p1.battlefield.find((p) => p.card.id === "swamp-a"),
+		);
+		assert.equal(swamp.tapped, true);
+		assert.deepEqual(state.players.p1.manaPool, { B: 1, C: 0 });
+		assert.deepEqual(state.players.p2.manaPool, { B: 0, C: 0 });
+		assert.equal(state.priorityPlayerId, P1, "the player keeps priority");
+		assert.ok(state.log.includes("Player 1 taps Swamp for {B}."));
+	});
+
+	it("makes black mana from Swamps and colorless mana from Wastes", () => {
+		const engine = scenario([], (s) => {
+			s.players.p1.battlefield.push({
+				card: { id: "wastes-a", name: "Wastes" },
+				controllerId: P1,
+				tapped: false,
+			});
+		});
+		tap(engine, "tap-mana:swamp-a");
+		tap(engine, "tap-mana:wastes-a");
+		assert.deepEqual(engine.exportState().players.p1.manaPool, { B: 1, C: 1 });
+	});
+
+	it("rejects tapping a land that is already tapped", () => {
+		const engine = scenario([]);
+		tap(engine, "tap-mana:swamp-a");
+		assert.equal(select(engine, "tap-mana:swamp-a").ok, false);
+		assert.equal(engine.exportState().players.p1.manaPool.B, 1);
+	});
+
+	it("does not offer a tapped land, and collapses identical untapped lands", () => {
+		const engine = scenario([], (s) => {
+			s.players.p1.battlefield.push({
+				card: { id: "swamp-c", name: "Swamp" },
+				controllerId: P1,
+				tapped: false,
+			});
+			s.players.p1.battlefield.push({
+				card: { id: "swamp-d", name: "Swamp" },
+				controllerId: P1,
+				tapped: true,
+			});
+		});
+		// Three Swamps (one tapped): one option for the untapped ones, none for the tapped one.
+		assert.deepEqual(tapOptionIds(engine), ["tap-mana:swamp-a"]);
+		tap(engine, "tap-mana:swamp-a");
+		assert.deepEqual(tapOptionIds(engine), ["tap-mana:swamp-c"]);
+		tap(engine, "tap-mana:swamp-c");
+		assert.deepEqual(tapOptionIds(engine), []);
+		assert.equal(engine.exportState().players.p1.manaPool.B, 2);
+	});
+
+	it("lets the player who holds priority tap, even on the opponent's turn", () => {
+		const engine = scenario([]);
+		pass(engine); // p1 passes; p2 holds priority
+		assert.equal(holder(engine), P2);
+		assert.deepEqual(tapOptionIds(engine), ["tap-mana:wastes-b"]);
+		tap(engine, "tap-mana:wastes-b");
+		const state = engine.exportState();
+		assert.deepEqual(state.players.p2.manaPool, { B: 0, C: 1 });
+		assert.deepEqual(state.players.p1.manaPool, { B: 0, C: 0 });
+	});
+
+	it("keeps floating mana while players pass within a phase", () => {
+		const engine = scenario([]);
+		tap(engine, "tap-mana:swamp-a");
+		pass(engine);
+		assert.equal(engine.exportState().phase, "main1");
+		assert.equal(engine.exportState().players.p1.manaPool.B, 1);
+	});
+
+	it("empties every pool when the phase ends, but lands stay tapped", () => {
+		const engine = scenario([]);
+		tap(engine, "tap-mana:swamp-a");
+		pass(engine);
+		tap(engine, "tap-mana:wastes-b");
+		assert.deepEqual(engine.exportState().players.p2.manaPool, { B: 0, C: 1 });
+		// Tapping reset the run of passes, so both players must pass again.
+		pass(engine);
+		assert.equal(engine.exportState().phase, "main1");
+		pass(engine); // both have passed in a row: main 1 ends
+
+		const state = engine.exportState();
+		assert.equal(state.phase, "combat");
+		assert.deepEqual(state.players.p1.manaPool, { B: 0, C: 0 });
+		assert.deepEqual(state.players.p2.manaPool, { B: 0, C: 0 });
+		for (const id of [P1, P2] as const) {
+			assert.equal(must(state.players[id].battlefield[0]).tapped, true);
+		}
+	});
+
+	it("resets the run of passes, as any action other than passing does", () => {
+		const engine = scenario([]);
+		pass(engine); // p1 passes
+		tap(engine, "tap-mana:wastes-b"); // p2 taps
+		assert.equal(engine.exportState().consecutivePasses, 0);
+		pass(engine); // p2 passes: p1 gets priority again
+		assert.equal(engine.exportState().phase, "main1");
+		assert.equal(holder(engine), P1);
+	});
+
+	it("empties mana across a turn change too", () => {
+		const engine = scenario([]);
+		advanceTo(engine, "end");
+		tap(engine, "tap-mana:swamp-a");
+		assert.equal(engine.exportState().players.p1.manaPool.B, 1);
+		passPhase(engine);
+		const state = engine.exportState();
+		assert.equal(state.activePlayerId, P2);
+		assert.deepEqual(state.players.p1.manaPool, { B: 0, C: 0 });
+	});
+
+	it("untaps the active player's lands on their next untap step", () => {
+		const engine = scenario([]);
+		tap(engine, "tap-mana:swamp-a");
+		advanceTo(engine, "end");
+		passPhase(engine); // p2's turn begins
+		advanceTo(engine, "end");
+		passPhase(engine); // back to p1: untap step runs automatically
+		const state = engine.exportState();
+		assert.equal(state.activePlayerId, P1);
+		assert.equal(must(state.players.p1.battlefield[0]).tapped, false);
+	});
+
+	it("shows the pool in both players' views", () => {
+		const engine = scenario([]);
+		tap(engine, "tap-mana:swamp-a");
+		for (const id of [P1, P2] as const) {
+			const view = engine.getView(id);
+			assert.deepEqual(view.players.p1.manaPool, { B: 1, C: 0 });
+			assert.deepEqual(view.players.p2.manaPool, { B: 0, C: 0 });
 		}
 	});
 });

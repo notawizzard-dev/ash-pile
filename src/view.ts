@@ -1,3 +1,4 @@
+import type { ManaPool } from "./mana";
 import type { Phase } from "./phases";
 import type {
 	ActionPrompt,
@@ -26,6 +27,8 @@ export interface PublicPlayerView {
 	/** Hands are hidden; only their size is public. */
 	handSize: number;
 	battlefield: Permanent[];
+	/** Floating mana is public. */
+	manaPool: ManaPool;
 }
 
 /**
